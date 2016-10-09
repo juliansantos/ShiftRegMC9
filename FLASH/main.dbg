@@ -3245,14 +3245,18 @@ mPageErase:         equ     $40
   ;*******************************Pin definition section
 pin_LATCH EQU 1 ; to latch data in the output of the registers
 pin_CLOCK EQU 2 ; to send the positive edges 
-pin_DATA EQU 3 ; data to be displayed 	  
+pin_DATA EQU 3 ; data to be displayed 	 
+pin_Red EQU  0; common pin red color
+pin_Green EQU 4 ; common pin green color
+pin_Blue EQU 1; common pin blue color
   
             XDEF _Startup
             ABSENTRY _Startup
 
             ORG   Z_RAMStart       ; Insert your data definition here
 data DS.B   2
-
+counter DS.B 1 ; For colors
+mode DS.B 1 ;  
 
             ORG    ROMStart
             
@@ -3265,6 +3269,7 @@ _Startup:   CLRA
 main:
 			JSR initialconfig
 			JSR initialstates
+			JSR initialIRQ
 			JMP case9
 			JMP *
             BRA    main
@@ -3274,6 +3279,9 @@ initialconfig:
 			BSET pin_LATCH,PTBDD ; Setting data direction (pin LATCH) 
 			BSET pin_CLOCK,PTBDD ; Setting data direction (pin CLOCK)
 			BSET pin_DATA,PTBDD ; Setting data direction (pin DATA)
+			BSET pin_Green,PTBDD ; setting data direction (pin green)
+			BSET pin_Red,PTBDD
+			BSET pin_Blue,PTGDD
 			RTS
 			
 ;******************************************Subroutine for set the initial states of the pins and vars			
@@ -3282,11 +3290,19 @@ initialstates:
 			BCLR pin_CLOCK,PTBD ; Initial state pin Clock
 			BCLR pin_DATA,PTBD ; Initial state pin Data
 			CLRA
-			LDA #01AH
 			STA data+1 ; Initial State of LEDs Low_byte
 			STA data+0 ; Initial State of LEDs High_byte
+			STA counter
+			STA mode ; mode 
 			JSR showdata
-			RTS      
+			JSR changecolor
+			RTS 
+;*******************************************Subroutine for set Interrupt ReQuest
+initialIRQ:
+			MOV #01110110B,IRQSC
+			CLI  ; Enabling interrupts
+			RTS
+			 			     
 ;*******************************************Subroutine for show data in displays
 showdata: 	
 			PSHX 
@@ -3335,7 +3351,9 @@ case1:;/////////////////////////////////////////////CASE 1
 			STA data
 			STA data+1
 		    JSR showdata
-		    JMP *   ;wait for an interruption
+		    JSR changecolor
+		    JSR delayAx5ms ; delay of 300ms
+		    JMP case1   ;wait for an interruption
 case2:;////////////////////////////////////////////CASE  2
 			CLRA
 			STA data+1
@@ -3344,6 +3362,8 @@ case2:;////////////////////////////////////////////CASE  2
 case2_1:    JSR showdata
     		JSR delayAx5ms ; delay of 300ms
     		JSR rrsdata2 
+    		BRCLR  7,data,case2_1
+		   	JSR changecolor
     		BRA case2_1
     		
 case3:;/////////////////////////////////////////////CASE 3
@@ -3354,6 +3374,8 @@ case3:;/////////////////////////////////////////////CASE 3
 case3_1:    JSR showdata
 		    JSR  delayAx5ms
 		    JSR rlsdata2 
+		    BRCLR  7,data,case3_1
+		   	JSR changecolor
 		    BRA case3_1 
      
 case4:;/////////////////////////////////////////////CASE 4
@@ -3363,6 +3385,7 @@ case4:;/////////////////////////////////////////////CASE 4
 		    LDA #80H
 		    STA data+1
 case4_1: 	JSR showdata
+		    JSR changecolor
 		    JSR  delayAx5ms
 		    INCA
 		    CBEQA #8,case4_3
@@ -3392,6 +3415,7 @@ case5_1:	JSR showdata
 		    JSR  delayAx5ms   
 		    JSR rrsdata2 
 		    JSR rrsdata2
+		    JSR changecolor
 		    BRA case5_1
 		    
 case6:;/////////////////////////////////////////////////CASE 6
@@ -3403,6 +3427,7 @@ case6_1:	JSR showdata
 		    JSR delayAx5ms    
 		    JSR rlsdata2 
 		    JSR rlsdata2
+		    JSR changecolor
 		    BRA case6_1
 		    
 case7:;////////////////////////////////////////////////CASE 7
@@ -3413,6 +3438,7 @@ case7_1:	JSR showdata
 		    JSR delayAx5ms
 		    COM data
 		    COM data+1
+		    JSR changecolor
 		    BRA case7_1
 
 		        
@@ -3440,6 +3466,7 @@ c8_3:  		INCX
     	    CBEQX #0FH,c8_31
      		BRA case8_4
 c8_31: 	    CLRX
+			JSR changecolor
      		BRA case8_2
 case8_2:    JSR delayAx5ms
     		JSR showdata
@@ -3464,6 +3491,7 @@ c9_1:       ROR data+1
 	        CBEQX #10H,c9_12
    		    BRA case9_2
 c9_12: 		CLRX
+			JSR changecolor
 case9_3:     
      		LSL data+1
    		    BCS c9_3
@@ -3480,39 +3508,6 @@ case9_4:    JSR delayAx5ms
     		JSR showdata
    		    BRA case9_3
    		        
-;case9:;////////////////////////////////////////////////CASE 
-;    movlw 0x00
-;    movwf sdata
-;    movlw 0x80
-;    movwf sdata+1
-;    clrf count15
-;    call showdata
-;case9_1: bsf STATUS,C    
-;    rrcf sdata+1
-;    btfsc STATUS,C
-;    rrcf sdata
-;    incf count15,F
-;    movlw 0x0F
-;    cpfsgt count15
-;    bra case9_2
-;    clrf count15
-;case9_3: 
-;     bcf STATUS,C    
-;     rlcf sdata
-;     btfss STATUS,C
-;     rlcf sdata+1
-;     incf count15,F
-;     movlw 0x0E
-;     cpfsgt count15
-;     bra case9_4
-;     clrf count15
-;     bra case9_2
-;case9_2:  call delay
-;    call showdata
-;    bra case9_1
-;case9_4:  call delay
-;    call showdata
-;    bra case9_3
         
 ;******************************************Subroutine to rotate right 16 bit register    						
 rrsdata2:
@@ -3530,6 +3525,58 @@ rlsdata2:
 	BSET 0,data+1 
 endrl:	RTS	
 		 	
+;******************************************Subroutine for change of colors
+changecolor:
+			PSHA
+			INC counter
+			LDA counter
+			CBEQA #1,blue
+			CBEQA #2,red
+			CBEQA #3,green
+			CBEQA #4,aqua
+			CBEQA #5,rose
+			CBEQA #6,orange
+			LDA #1
+			STA counter
+			BRA blue
+			RTS 
+blue:
+			BCLR pin_Green,PTBD ; Turn off LEDs green
+			BSET pin_Blue,PTGD ; Turn ON LEDs blue
+			BCLR pin_Red,PTBD ; Turn off LEDs red	
+			PULA
+			RTS
+red:
+			BCLR pin_Green,PTBD ; Turn off LEDs green
+			BCLR pin_Blue,PTGD ; Turn off LEDs blue
+			BSET pin_Red,PTBD ; Turn ON LEDs red	
+			PULA
+			RTS
+green:
+			BSET pin_Green,PTBD ; Turn ON LEDs green
+			BCLR pin_Blue,PTGD ; Turn off LEDs blue
+			BCLR pin_Red,PTBD ; Turn off LEDs red	
+			PULA
+			RTS
+aqua:
+			BSET pin_Green,PTBD ; Turn ON LEDs green
+			BSET pin_Blue,PTGD ; Turn ON LEDs blue
+			BCLR pin_Red,PTBD ; Turn off LEDs red	
+			PULA
+			RTS
+rose:
+			BCLR pin_Green,PTBD ; Turn off LEDs green
+			BSET pin_Blue,PTGD ; Turn ON LEDs blue
+			BSET pin_Red,PTBD ; Turn ON LEDs red	
+			PULA
+			RTS
+orange:
+			BSET pin_Green,PTBD ; Turn ON LEDs green
+			BCLR pin_Blue,PTGD ; Turn off LEDs blue
+			BSET pin_Red,PTBD ; Turn ON LEDs red	
+			PULA
+			RTS			
+			 	
 ;******************************************Subroutine for crete delays 8MHz
 delayAx5ms: ; 6 cycles the call of subroutine
 			PSHX
@@ -3546,5 +3593,64 @@ delay_1:    AIX #-1 ; 2 cycles
 			PULX
 			RTS ; 5 cycles				     
 			
+;*********************************************Routine for IRQ
+ISR_IRQ:
+			PULA ; Throw CCR away
+			PULA ; Throw A away
+			PULA ; Throw X away
+			PULA ; Throw PCH away 
+			PULA ; Throw PCL away
+			
+			JSR delayAx5ms ; Antidebouncing
+
+			INC mode 
+			LDA mode
+			CBEQA #1,rcase0
+			CBEQA #2,rcase1
+			CBEQA #3,rcase2
+			CBEQA #4,rcase3
+			CBEQA #5,rcase4
+			CBEQA #6,rcase5
+			CBEQA #7,rcase6
+			CBEQA #8,rcase7
+			CBEQA #9,rcase8
+			CBEQA #10,rcase9
+			CLR mode ;else
+			BRA ISR_IRQ
+	;JMP *
+rcase0:		LDHX #case0
+			BRA SALIR
+rcase1:		LDHX #case1
+			BRA SALIR
+rcase2:		LDHX #case2
+			BRA SALIR
+rcase3:		LDHX #case3
+			BRA SALIR
+rcase4:		LDHX #case4
+			BRA SALIR
+rcase5:		LDHX #case5
+			BRA SALIR
+rcase6:		LDHX #case6
+			BRA SALIR
+rcase7:		LDHX #case7
+			BRA SALIR
+rcase8:		LDHX #case8
+			BRA SALIR
+rcase9:		LDHX #case9
+			BRA SALIR
+
+
+SALIR:	   	PSHX  
+			PSHH
+			CLRA
+			PSHA
+			PSHA
+			PSHA
+		    BSET 2,IRQSC ; clearing flag
+			RTI
+			
+;*********************************************************INTERRUPT VECTORS						
+			ORG Virq
+			DC.W ISR_IRQ			;External interrupt
             ORG Vreset
 			DC.W  _Startup			; Reset
